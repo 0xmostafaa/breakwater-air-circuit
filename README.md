@@ -29,6 +29,18 @@ For LAN connection trouble, check that Windows allows the host application on th
 
 Import `project.godot` in **Godot 4.7.2 Standard** and press **F6** with the main scene open or **F5** from the project. The project uses GDScript, the Compatibility renderer, and ENet. The island, aircraft, materials, and sounds are generated locally by the game.
 
+### OpenGL in the submitted demo
+
+The Windows v0.1.0 build ran on **OpenGL 3.3** on the development laptop. The packaged game's startup log identified the renderer as `OpenGL API 3.3.0 NVIDIA 572.16 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce GTX 1050 Ti`. Godot issues the OpenGL calls. The game supplies procedural mesh data and a custom water shader written in Godot's shading language.
+
+To check the renderer on another Windows laptop, extract the game, open PowerShell in its folder, and run:
+
+```powershell
+$log = Join-Path $env:TEMP 'breakwater-renderer.log'
+Start-Process -FilePath '.\Breakwater.exe' -ArgumentList @('--quit-after', '60', '--log-file', ('"{0}"' -f $log)) -Wait
+Select-String -LiteralPath $log -Pattern 'OpenGL|Vulkan|Direct3D'
+```
+
 | File | Responsibility |
 | --- | --- |
 | `game.gd` | Host/join lifecycle, match rules, input transport, host simulation, camera, audio |
