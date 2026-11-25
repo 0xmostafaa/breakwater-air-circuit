@@ -1,14 +1,16 @@
-# Breakwater
+# air-strike
 
 A local multiplayer jet game for Windows. Fly through the mountain pass on Kestrel Island, bank around the coastal airfield, and chase the opposing team over the water. One laptop hosts up to four pilots. A solo practice flight uses the same aircraft and island.
 
 ![A practice flight over Kestrel Island](docs/flight.png)
 
-[Download the Windows game or watch the 30-second practice flight](https://github.com/0xmostafaa/breakwater-air-circuit/releases/tag/v0.1.0)
+Kestrel Island and its flight zone have twice the horizontal area of the original demo. Install the same game version on every laptop in a match.
+
+[Download the Windows game](https://github.com/0xmostafaa/breakwater-air-circuit/releases/tag/v0.2.0)
 
 ## Play
 
-1. Download the Windows ZIP. Extract it and double-click **Breakwater.exe**. Keep **Breakwater.pck** beside the executable.
+1. Download the Windows ZIP. Extract it and double-click **air-strike.exe**. Keep **air-strike.pck** beside the executable.
 2. Choose **Practice flight** to learn the controls. To play together, connect the laptops to the same Wi-Fi and have one pilot choose **Host LAN match**.
 3. Enter the host's displayed Wi-Fi IPv4 address on the other laptops and choose **Join by IP**. If the host lists multiple addresses, use the Wi-Fi adapter's IPv4 address from Windows `ipconfig`.
 
@@ -18,9 +20,8 @@ The match starts when a second pilot joins. The host assigns teams, awards one p
 | --- | --- |
 | W / S | Climb / dive while held |
 | A / D | Bank and turn left / right |
-| Mouse | Move the steering ring. Center it to hold direction. The small cross shows the blaster's aim. |
 | Space | Hold for up to two seconds of boost. Release to recharge. |
-| Left mouse | Hold to fire |
+| Left click or F | Tap for one shot or hold for automatic fire while turning. The crosshair follows the jet's nose. |
 | Esc | Open or close the flight menu. Other pilots keep flying. |
 
 For LAN connection trouble, check that Windows allows the host application on the private network and that the Wi-Fi permits devices to reach each other over UDP port **28741**. A private hotspot also works. WAN matchmaking and host migration are outside this prototype.
@@ -36,8 +37,8 @@ The Windows v0.1.0 build ran on **OpenGL 3.3** on the development laptop. The pa
 To check the renderer on another Windows laptop, extract the game, open PowerShell in its folder, and run:
 
 ```powershell
-$log = Join-Path $env:TEMP 'breakwater-renderer.log'
-Start-Process -FilePath '.\Breakwater.exe' -ArgumentList @('--quit-after', '60', '--log-file', ('"{0}"' -f $log)) -Wait
+$log = Join-Path $env:TEMP 'air-strike-renderer.log'
+Start-Process -FilePath '.\air-strike.exe' -ArgumentList @('--quit-after', '60', '--log-file', ('"{0}"' -f $log)) -Wait
 Select-String -LiteralPath $log -Pattern 'OpenGL|Vulkan|Direct3D'
 ```
 

@@ -1,7 +1,9 @@
 extends Node3D
 
 const Art = preload("res://visuals.gd")
-const STEP := 30.0
+const MAP_SCALE := sqrt(2.0)
+const FLIGHT_RADIUS := 1600.0 * MAP_SCALE
+const STEP := 30.0 * MAP_SCALE
 const HALF := 42
 var heights := PackedFloat32Array()
 var obstacles: Array[AABB] = []
@@ -46,6 +48,8 @@ func _light() -> void:
 	add_child(sun)
 
 func _land(x: float, z: float) -> float:
+	x /= MAP_SCALE
+	z /= MAP_SCALE
 	var r := sqrt(pow((x + 35.0 * sin(z * 0.007)) / 1090.0, 2) + pow((z - 45.0 * sin(x * 0.006)) / 735.0, 2))
 	var shore := clampf((1.0 - r) * 5.0, 0, 1)
 	var ridge := 220.0 * exp(-pow((z + 100.0 + 0.20 * x) / 195.0, 2) - pow(x / 670.0, 2))
@@ -128,7 +132,7 @@ func _airfield() -> void:
 	var dark := Art.material(Color("#394953"))
 	var paint := Art.material(Color("#e8ddbf"))
 	var red := Art.material(Color("#b85839"))
-	var base := Vector3(190, 25, 325)
+	var base := Vector3(190 * MAP_SCALE, 25, 325 * MAP_SCALE)
 	Art.box(self, base, Vector3(280, 3, 29), dark)
 	obstacles.append(AABB(base - Vector3(140,1.5,14.5), Vector3(280,3,29)))
 	for i in range(-6, 7):
@@ -141,7 +145,8 @@ func _airfield() -> void:
 		obstacles.append(AABB(p - size/2, size).grow(1))
 	# Three striped navigation towers make an easy first flight course.
 	for x in [-280, 0, 280]:
-		var p := Vector3(x, ground_at(x, 200), 200)
+		var p := Vector3(x * MAP_SCALE, 0, 200 * MAP_SCALE)
+		p.y = ground_at(p.x, p.z)
 		Art.cylinder(self, p + Vector3.UP * 32, 4, 7, 64, paint)
 		Art.cylinder(self, p + Vector3.UP * 50, 4.9, 5.4, 8, red)
 		Art.cylinder(self, p + Vector3.UP * 65, 3, 4, 4, red)
@@ -177,13 +182,15 @@ func _woods() -> void:
 	forest.mesh = cone
 	var poses: Array[Transform3D] = []
 	var colors: Array[Color] = []
-	for grove in range(52):
-		var center := Vector2(rng.randf_range(-920,920),rng.randf_range(-610,610))
+	var airfield_center := Vector2(190, 325) * MAP_SCALE
+	var airfield_bounds := Rect2(airfield_center - Vector2(166,55), Vector2(326,120))
+	for grove in range(104):
+		var center := Vector2(rng.randf_range(-920,920),rng.randf_range(-610,610)) * MAP_SCALE
 		for i in range(28):
 			var x := center.x + rng.randfn(0,35)
 			var z := center.y + rng.randfn(0,23)
 			var h := ground_at(x,z)
-			if h < 13 or h > 135 or (x > 24 and x < 350 and z > 270 and z < 390): continue
+			if h < 13 or h > 135 or airfield_bounds.has_point(Vector2(x,z)): continue
 			var height := rng.randf_range(7.0,17.0)
 			var width := height * rng.randf_range(0.43,0.68)
 			var at := Vector3(x,h+height*0.42,z)

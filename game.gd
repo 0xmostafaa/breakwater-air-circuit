@@ -21,7 +21,8 @@ var scores := Vector2i.ZERO
 var remaining := ROUND_SECONDS
 var net_timer := 0.0
 var join_timer := 0.0
-var aim := Vector2.ZERO
+var mouse_firing := false
+var key_firing := false
 var camera_spawn := -1
 var ip_hint := ""
 var last_camera_pos := Vector3.ZERO
@@ -57,7 +58,7 @@ func _ready() -> void:
 	_audio()
 
 func _bind_controls() -> void:
-	var bindings := {"climb":KEY_W,"dive":KEY_S,"bank_left":KEY_A,"bank_right":KEY_D,"boost":KEY_SPACE}
+	var bindings := {"climb":KEY_W,"dive":KEY_S,"bank_left":KEY_A,"bank_right":KEY_D,"boost":KEY_SPACE,"fire_key":KEY_F}
 	for action in bindings:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		var key := InputEventKey.new()
@@ -108,7 +109,7 @@ func host() -> void:
 	ip_hint = ", ".join(ips) if not ips.is_empty() else "check your Wi-Fi IPv4 address"
 	_add_plane(1,0)
 	_start_flight()
-	print("Hosting Breakwater on UDP ", PORT)
+	print("Hosting air-strike on UDP ", PORT)
 
 func practice() -> void:
 	if mode != "menu": return
@@ -147,7 +148,6 @@ func _client_ready() -> void:
 func _start_flight() -> void:
 	menu_jet.hide()
 	camera_spawn = -1
-	aim = Vector2.ZERO
 	_resume()
 	motor.play()
 
@@ -156,6 +156,8 @@ func _resume() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func leave(message := "") -> void:
+	mouse_firing = false
+	key_firing = false
 	mode = "menu"
 	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
 		multiplayer.multiplayer_peer.close()
@@ -206,7 +208,7 @@ func _spawn(id: int) -> void:
 		if other == id: break
 		if planes[other].team == jet.team: offset += 1
 	# Both spawn points face toward the central valley.
-	var at := Vector3(side*(365+offset*75), 123+offset*25, side*415)
+	var at := Vector3(side*(365*Island.MAP_SCALE+offset*75), 123+offset*25, side*415*Island.MAP_SCALE)
 	jet.reset_flight(at, atan2(at.x, at.z))
 
 func _begin_round() -> void:
@@ -226,22 +228,60 @@ func _finish_round() -> void:
 	_show_results()
 
 func _show_results() -> void:
+	_release_fire()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var title := "Draw"
 	if scores.x > scores.y: title = "Tide wins"
 	elif scores.y > scores.x: title = "Ember wins"
 	hud.results(title, "Tide   %d     /     %d   Ember" % [scores.x,scores.y], mode == "host")
 
+func _input(event: InputEvent) -> void:
+	if hud.overlay != "" or mode not in ["host", "client", "practice"] or event.is_echo(): return
+	var was_firing := mouse_firing or key_firing
+	if event.is_action("fire"):
+		mouse_firing = event.is_pressed()
+	elif event.is_action("fire_key"):
+		key_firing = event.is_pressed()
+	else:
+		return
+	if was_firing != (mouse_firing or key_firing):
+		_send_trigger(mouse_firing or key_firing)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT: _release_fire()
+
+func _release_fire() -> void:
+	if mouse_firing or key_firing:
+		mouse_firing = false
+		key_firing = false
+		_send_trigger(false)
+
+func _send_trigger(pressed: bool) -> void:
+	if mode == "client":
+		_remote_trigger.rpc_id(1, pressed)
+	elif planes.has(1):
+		_set_trigger(planes[1], pressed)
+
+@rpc("any_peer","call_remote","reliable")
+func _remote_trigger(pressed: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if mode == "host" and planes.has(id): _set_trigger(planes[id], pressed)
+
+func _set_trigger(jet: Jet, pressed: bool) -> void:
+	# Preserve a quick tap between physics ticks. Held fire still uses the host cooldown.
+	if pressed and not jet.trigger and jet.hp > 0 and phase != "finished":
+		jet.shot_queued = true
+	jet.trigger = pressed
+
 func _unhandled_input(event: InputEvent) -> void:
 	if mode in ["menu","connecting"]: return
 	if event.is_action_pressed("ui_cancel"):
 		if hud.overlay == "pause": _resume()
 		elif hud.overlay == "":
+			_release_fire()
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			hud.pause_menu()
 		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and hud.overlay == "":
-		aim = (aim + Vector2(event.relative.x, -event.relative.y) * 0.0045).limit_length(1.0)
 
 func _physics_process(dt: float) -> void:
 	if mode == "connecting":
@@ -255,16 +295,14 @@ func _physics_process(dt: float) -> void:
 	var key_axes := Vector2.ZERO
 	if enabled:
 		key_axes = Vector2(Input.get_axis("bank_left","bank_right"), Input.get_axis("dive","climb"))
-	var steering := aim if enabled else Vector2.ZERO
 	var boost := enabled and Input.is_action_pressed("boost")
-	var fire := enabled and Input.is_action_pressed("fire")
 	net_timer += dt
 	if mode == "client":
 		if net_timer >= SNAPSHOT_INTERVAL:
 			net_timer = 0
-			_controls.rpc_id(1, steering, key_axes, boost, fire)
+			_controls.rpc_id(1, key_axes, boost)
 		return
-	_set_input(planes[id], steering, key_axes, boost, fire)
+	_set_input(planes[id], key_axes, boost)
 	if phase != "finished":
 		for pilot in planes:
 			_fly(pilot, dt)
@@ -277,16 +315,14 @@ func _physics_process(dt: float) -> void:
 		_broadcast()
 
 @rpc("any_peer","call_remote","unreliable_ordered",1)
-func _controls(steering: Vector2, axes: Vector2, boost: bool, fire: bool) -> void:
+func _controls(axes: Vector2, boost: bool) -> void:
 	var id := multiplayer.get_remote_sender_id()
-	if mode == "host" and planes.has(id) and steering.is_finite() and axes.is_finite():
-		_set_input(planes[id], steering.limit_length(1.0), axes.clamp(Vector2(-1,-1),Vector2.ONE), boost, fire)
+	if mode == "host" and planes.has(id) and axes.is_finite():
+		_set_input(planes[id], axes.clamp(Vector2(-1,-1),Vector2.ONE), boost)
 
-func _set_input(jet: Jet, steering: Vector2, axes: Vector2, boost: bool, fire: bool) -> void:
-	jet.aim = steering
+func _set_input(jet: Jet, axes: Vector2, boost: bool) -> void:
 	jet.keys = axes
 	jet.boost_pressed = boost
-	jet.trigger = fire
 
 func _fly(id: int, dt: float) -> void:
 	var jet: Jet = planes[id]
@@ -295,9 +331,10 @@ func _fly(id: int, dt: float) -> void:
 		if jet.respawn_time <= 0: _spawn(id)
 		return
 	jet.advance(dt)
-	if arena.blocked(jet.position) or Vector2(jet.position.x,jet.position.z).length() > 1600 or jet.position.y > 850:
+	if arena.blocked(jet.position) or Vector2(jet.position.x,jet.position.z).length() > Island.FLIGHT_RADIUS or jet.position.y > 850:
 		_eliminate(jet)
-	elif jet.trigger and jet.cooldown <= 0:
+	elif (jet.trigger or jet.shot_queued) and jet.cooldown <= 0:
+		jet.shot_queued = false
 		_fire(id)
 
 func _eliminate(jet: Jet) -> void:
@@ -392,14 +429,12 @@ func _process(dt: float) -> void:
 	if camera_spawn != pilot.spawn_serial:
 		last_camera_pos = goal
 		camera_spawn = pilot.spawn_serial
-		aim = Vector2.ZERO
 	last_camera_pos = last_camera_pos.lerp(goal,1.0-exp(-10*dt))
 	camera.position = last_camera_pos
 	camera.look_at(pilot.position+dir*30, up)
 	camera.fov = lerpf(camera.fov, 81 if pilot.boosting else 72, 1.0-exp(-4*dt))
 	motor.pitch_scale = lerpf(motor.pitch_scale,1.55 if pilot.boosting else 1.0,1.0-exp(-6*dt))
 	motor.volume_db = -42 if pilot.hp <= 0 or phase == "finished" else -20
-	hud.aim = Vector2(aim.x,-aim.y)
 	hud.nose = camera.unproject_position(pilot.position+dir*200)
 	hud.markers.clear()
 	for other in planes:
@@ -409,7 +444,7 @@ func _process(dt: float) -> void:
 	var banner := ""
 	if mode == "practice": banner = "Practice flight"
 	elif phase == "waiting": banner = "Waiting for pilots   •   Join IP: " + ip_hint
-	if pilot.position.y > 720 or Vector2(pilot.position.x,pilot.position.z).length() > 1360:
+	if pilot.position.y > 720 or Vector2(pilot.position.x,pilot.position.z).length() > Island.FLIGHT_RADIUS * 0.85:
 		banner = "Return to the island"
 	hud.match_data = {"scores":scores,"clock":ceili(remaining),"banner":banner,"dead":pilot.respawn_time,"charge":pilot.charge,"hp":pilot.hp,"team":"TIDE" if pilot.team==0 else "EMBER"}
 	hud.queue_redraw()

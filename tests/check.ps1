@@ -30,7 +30,7 @@ function Wait-ForHost($Server, [string]$Role) {
     do {
         Start-Sleep -Milliseconds 200
         $ready = (Test-Path -LiteralPath $hostLog) -and
-            (Select-String -LiteralPath $hostLog -Pattern 'Hosting Breakwater' -Quiet)
+            (Select-String -LiteralPath $hostLog -Pattern 'Hosting air-strike' -Quiet)
     } until ($ready -or $server.HasExited -or [DateTime]::UtcNow -gt $deadline)
     if (-not $ready) { throw 'The test host could not start.' }
 }

@@ -3,6 +3,7 @@ extends SceneTree
 const Game = preload("res://game.gd")
 var game: Game
 var failed := false
+var shots_seen := 0
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -10,6 +11,8 @@ func _initialize() -> void:
 func _run() -> void:
 	game = preload("res://main.tscn").instantiate()
 	root.add_child(game)
+	game.child_entered_tree.connect(func(node: Node):
+		if node is MeshInstance3D: shots_seen += 1)
 	var args := OS.get_cmdline_user_args()
 	match args[0]:
 		"flight": await _flight()
@@ -40,6 +43,12 @@ func _flight() -> void:
 	_check(game.mode == "menu" and "IPv4" in game.hud.notice.text, "invalid join feedback")
 	game.hud.practice_requested.emit()
 	var jet = game.planes[1]
+	var initial_heading: float = jet.heading
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(180,-120)
+	Input.parse_input_event(motion)
+	await create_timer(0.12).timeout
+	_check(is_equal_approx(initial_heading, jet.heading) and is_zero_approx(jet.pitch), "mouse motion leaves course unchanged")
 	var origin: Vector3 = jet.position
 	Input.action_press("climb")
 	Input.action_press("bank_right")
@@ -51,11 +60,39 @@ func _flight() -> void:
 	var charge: float = jet.charge
 	await create_timer(0.2).timeout
 	_check(jet.charge > charge, "nitro recharges on release")
+	for turn in ["bank_left", "bank_right"]:
+		Input.action_press(turn)
+		var before := shots_seen
+		_fire_event(true)
+		_fire_event(false)
+		await _until(func(): return shots_seen > before, "quick click during " + turn)
+		_fire_event(true, true)
+		await _until(func(): return shots_seen >= before + 3, "held F fires repeatedly during " + turn)
+		_fire_event(false, true)
+		Input.action_release(turn)
+	_check(game.arena.ground_at(1250,0) > 1.5, "land extends past the former east coast")
+	jet.reset_flight(Vector3(1800,400,0),0)
+	await physics_frame
+	await physics_frame
+	_check(jet.hp == 3, "new flight area extends beyond the former boundary")
 	game._eliminate(jet)
 	await _until(func(): return jet.hp == 3 and jet.visible, "three-second respawn", 4.5)
 	_check(game.arena.blocked(Vector3(0,-1,0)) and not game.arena.blocked(Vector3(0,500,0)), "terrain collision")
 	game.hud.leave_requested.emit()
 	_check(game.planes.is_empty() and game.hud.overlay == "menu", "clean practice exit")
+
+func _fire_event(pressed: bool, keyboard := false) -> void:
+	if keyboard:
+		var key := InputEventKey.new()
+		key.physical_keycode = KEY_F
+		key.pressed = pressed
+		Input.parse_input_event(key)
+	else:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = pressed
+		Input.parse_input_event(click)
+	Input.flush_buffered_events()
 
 func _host() -> void:
 	game.hud.host_requested.emit()
@@ -65,7 +102,7 @@ func _host() -> void:
 	for id in game.planes:
 		if id != 1: remote_id = id
 	var rival = game.planes[remote_id]
-	if not await _until(func(): return rival.boosting and rival.bank < -0.05, "remote controls reach host"): return
+	if not await _until(func(): return rival.boosting and rival.bank < -0.05 and shots_seen >= 2, "remote pilot fires while banking and boosting"): return
 	_check(rival.team == 1 and game.planes[1].team == 0, "opposing teams")
 	# Use reproducible geometry and the actual host firing path to finish a round.
 	var pilot = game.planes[1]
@@ -89,7 +126,9 @@ func _client() -> void:
 	if not await _until(func(): return game.phase == "active" and game.planes.size() == 2, "client sees both planes"): return
 	Input.action_press("boost")
 	Input.action_press("bank_right")
+	_fire_event(true)
 	if not await _until(func(): return game.phase == "finished" and game.scores.x == 5, "client receives winning score"): return
+	_fire_event(false)
 	Input.action_release("boost")
 	Input.action_release("bank_right")
 	_check(game.hud.overlay == "result", "client results screen")

@@ -16,10 +16,10 @@ var hp := MAX_HP
 var respawn_time := 0.0
 var cooldown := 0.0
 var spawn_serial := 0
-var aim := Vector2.ZERO
 var keys := Vector2.ZERO
 var boost_pressed := false
 var trigger := false
+var shot_queued := false
 var exhaust: MeshInstance3D
 var destination := Vector3.ZERO
 var target_angles := Vector3.ZERO
@@ -125,6 +125,7 @@ func reset_flight(at: Vector3, yaw: float) -> void:
 	boost_locked = false
 	boosting = false
 	cooldown = 0.3
+	shot_queued = false
 	spawn_serial += 1
 	visible = true
 	update_pose()
@@ -133,10 +134,9 @@ func direction() -> Vector3:
 	return Vector3(-sin(heading) * cos(pitch), sin(pitch), -cos(heading) * cos(pitch))
 
 func advance(dt: float) -> void:
-	var vertical := keys.y if absf(keys.y) > 0.1 else aim.y
-	pitch = clampf(pitch + vertical * 1.15 * dt, -1.25, 1.25)
-	bank = move_toward(bank, -keys.x * 1.05 - aim.x * 0.23, dt * 2.7)
-	heading = wrapf(heading + (bank * 0.89 - aim.x * 1.08) * dt, -PI, PI)
+	pitch = clampf(pitch + keys.y * 1.15 * dt, -1.25, 1.25)
+	bank = move_toward(bank, -keys.x * 1.05, dt * 2.7)
+	heading = wrapf(heading + bank * 0.89 * dt, -PI, PI)
 	if not boost_pressed and charge >= 0.15: boost_locked = false
 	boosting = boost_pressed and not boost_locked and charge > 0
 	if boosting:

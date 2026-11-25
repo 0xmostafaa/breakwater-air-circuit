@@ -18,7 +18,6 @@ var notice: Label
 var address: LineEdit
 var overlay := "menu"
 var match_data := {}
-var aim := Vector2.ZERO
 var nose := Vector2.ZERO
 var markers: Array = []
 var hit_until := 0
@@ -90,8 +89,8 @@ func _button(title: String, action: Callable, primary := false) -> Button:
 
 func menu(message := "") -> void:
 	_open("menu")
-	_label("AIR CIRCUIT    /    LAN DEATHMATCH", 14, MINT)
-	_label("Breakwater", 49, PAPER)
+	_label("LAN DEATHMATCH", 14, MINT)
+	_label("air-strike", 49, PAPER)
 	_label("Kestrel Island", 21, MUTED)
 	content.add_child(HSeparator.new())
 	_button("Host LAN match", func(): host_requested.emit(), true)
@@ -103,7 +102,7 @@ func menu(message := "") -> void:
 	_button("Join by IP", func(): join_requested.emit(address.text.strip_edges()))
 	_button("Practice flight", func(): practice_requested.emit())
 	_label("W/S   climb / dive       A/D   bank", 15, MUTED)
-	_label("Mouse   steer      LMB   fire      Space   boost", 15, MUTED)
+	_label("Left click or F   fire      Space   boost", 15, MUTED)
 	notice = _label(message, 14, CORAL)
 	notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	notice.custom_minimum_size.x = 315
@@ -151,8 +150,6 @@ func _draw() -> void:
 	if d.dead > 0:
 		_caption(mid, "Respawning in %d" % ceili(d.dead), 28, PAPER, true)
 	else:
-		var cursor := mid + aim * minf(size.x, size.y) * 0.29
-		draw_arc(cursor, 9, 0, TAU, 32, Color("#ffffffbf"), 1.7, true)
 		var cross_color := MINT if Time.get_ticks_msec() < hit_until else PAPER
 		for axis in [Vector2.LEFT,Vector2.RIGHT,Vector2.UP,Vector2.DOWN]:
 			draw_line(nose+axis*3, nose+axis*9, cross_color, 2, true)
